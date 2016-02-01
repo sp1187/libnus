@@ -30,6 +30,13 @@
 #define DP_CLEAR_INTERRUPT 0x0800
 #define AI_CLEAR_INTERRUPT 0
 
+#define SW1_INTR 0x01
+#define SW2_INTR 0x02
+#define RCP_INTR 0x04
+#define CART_INTR 0x08
+#define PRENMI_INTR 0x10
+#define COUNT_INTR 0x80
+
 typedef struct {
     volatile void * address;
     uint32_t length;

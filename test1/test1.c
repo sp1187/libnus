@@ -44,7 +44,7 @@ int main(){
 
 	nus_scheduler_init(irq_stack, sizeof irq_stack);
 
-	nus_interrupt_set_mask(0x80);
+	nus_interrupt_set_mask(COUNT_INTR);
 	nus_interrupt_enable();
 
 	nus_queue_init(&test_queue, test_queue_area, sizeof test_queue_area / sizeof (*test_queue_area));

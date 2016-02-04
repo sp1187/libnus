@@ -1,6 +1,6 @@
 .extern nus_scheduler
 .extern _nus_handle_interrupt
-.extern _thread_reschedule
+.extern _nus_thread_reschedule
 
 .global interrupt_handler
 .type interrupt_handler, @function

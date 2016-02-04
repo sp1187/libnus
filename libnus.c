@@ -25,7 +25,7 @@ void nus_scheduler_init(void *irq_area, size_t irq_size){
 
 /* Internal thread functions */
 
-static nus_thread_t* _nus_tlist_pop(nus_thread_t **start){
+nus_thread_t *_nus_tlist_pop(nus_thread_t **start){
 	nus_thread_t *tp = *start;
 	if(tp != NULL) *start = tp->next;
 	return tp;
@@ -77,7 +77,7 @@ void _nus_thread_reschedule(){
 
 /* Thread functions */
 
-void nus_thread_init(nus_thread_t* tp, const char *name, nus_prio_t prio, void (*entry)(void), void *area, size_t size){
+void nus_thread_init(nus_thread_t *tp, const char *name, nus_prio_t prio, void (*entry)(void), void *area, size_t size){
 	tp->next = NULL;
 	tp->name = name;
 	tp->prio = prio;
@@ -155,7 +155,7 @@ nus_result_t nus_thread_setprio(nus_prio_t newprio){
 
 /* Queue functions */
 
-void nus_queue_init(nus_queue_t* mq, intptr_t *array, int size){
+void nus_queue_init(nus_queue_t *mq, intptr_t *array, int size){
 	mq->array = array;
 	mq->size = size;
 	mq->count = 0;
@@ -165,7 +165,7 @@ void nus_queue_init(nus_queue_t* mq, intptr_t *array, int size){
 	mq->blocksend = NULL;
 }
 
-nus_result_t nus_queue_send(nus_queue_t* mq, intptr_t msg){
+nus_result_t nus_queue_send(nus_queue_t *mq, intptr_t msg){
 	nus_interrupt_disable();
 
 	if(mq->count == mq->size){
@@ -181,7 +181,7 @@ nus_result_t nus_queue_send(nus_queue_t* mq, intptr_t msg){
 
 	}
 
-	nus_thread_t* tp = _nus_tlist_pop(&(mq->blockrecv));
+	nus_thread_t *tp = _nus_tlist_pop(&(mq->blockrecv));
 	if(tp != NULL) {
 		_nus_thread_ready(tp);
 	}
@@ -215,7 +215,6 @@ nus_result_t nus_queue_recv(nus_queue_t *mq, intptr_t *msg){
 	}
 
 	nus_thread_t *tp = _nus_tlist_pop(&(mq->blocksend));
-
 	if(tp != NULL) {
 		_nus_thread_ready(tp);
 	}
@@ -260,7 +259,6 @@ void NUS_ISR_dp(void) __attribute__((weak));
 
 static void (*nus_isr_table[])(void);
 
-
 void _nus_handle_interrupt(){
 	uint32_t cause = nus_c0_get_cause();
 	uint32_t exc_code = (cause & 0x7c) >> 2;
@@ -299,7 +297,6 @@ void nus_handle_rcp_interrupt(){
 	if(status & MI_INTR_VI) {
 		VI_regs->cur_line = 0; 
 		if(NUS_ISR_vi) NUS_ISR_vi();
-
 	}
 
 	if(status & MI_INTR_PI) {

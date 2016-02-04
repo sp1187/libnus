@@ -94,14 +94,14 @@ typedef enum {
 typedef struct nus_thread {
 	nus_context_t *sp;
 	struct nus_thread *next;
-	const char* name;
+	const char *name;
 	nus_prio_t prio;
 	nus_status_t status;
 } nus_thread_t;
 
 typedef struct {
-	nus_thread_t* current;
-	nus_thread_t* ready;
+	nus_thread_t *current;
+	nus_thread_t *ready;
 	intptr_t irq_sp;
 } nus_scheduler_t; 
 
@@ -117,7 +117,7 @@ typedef struct {
 
 void nus_scheduler_init(void*, size_t);
 
-void nus_thread_init(nus_thread_t *, const char *, nus_prio_t, void (*)(void), void*, size_t);
+void nus_thread_init(nus_thread_t*, const char*, nus_prio_t, void (*)(void), void*, size_t);
 
 nus_result_t nus_thread_wakeup(nus_thread_t*);
 nus_result_t nus_thread_suspend(void);

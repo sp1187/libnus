@@ -7,22 +7,6 @@ extern void _nus_context_switch(nus_thread_t*, nus_thread_t*);
 
 #define IN_INTERRUPT() (nus_c0_get_status() & 0x06)
 
-/* Scheduler functions */
-
-void nus_scheduler_init(void *irq_area, size_t irq_size){
-	static nus_thread_t mainthread;
-
-	nus_scheduler.current = &mainthread;
-	nus_scheduler.ready = NULL;
-	nus_scheduler.irq_sp = (intptr_t) irq_area + irq_size;
-
-	mainthread.next = NULL;
-	mainthread.prio = 128;
-	mainthread.name = "main";
-	mainthread.status = RUNNING;
-
-}
-
 /* Internal thread functions */
 
 nus_thread_t *_nus_tlist_pop(nus_thread_t **start){
@@ -65,7 +49,6 @@ void _nus_thread_switch(){
 	nus_scheduler.current = ntp;
 
 	_nus_tlist_insert(otp,&nus_scheduler.ready);
-
 	_nus_context_switch(ntp, otp);
 }
 
@@ -75,6 +58,35 @@ void _nus_thread_reschedule(){
 	}
 }
 
+/* Scheduler functions */
+
+void nus_scheduler_init(void *irq_area, size_t irq_size){
+	static nus_thread_t mainthread;
+
+	nus_scheduler.current = &mainthread;
+	nus_scheduler.ready = NULL;
+	nus_scheduler.irq_sp = (intptr_t) irq_area + irq_size;
+
+	mainthread.next = NULL;
+	mainthread.prio = 128;
+	mainthread.name = "main";
+	mainthread.status = RUNNING;
+
+}
+
+void nus_scheduler_start(){
+	nus_scheduler.started = true;
+
+	if(nus_scheduler.current->status != SUSPENDED){
+		_nus_thread_reschedule();
+	}
+	else {
+		_nus_thread_block();
+	}
+
+	nus_c0_set_status(nus_c0_get_status() | 1);
+}
+
 /* Thread functions */
 
 void nus_thread_init(nus_thread_t *tp, const char *name, nus_prio_t prio, void (*entry)(void), void *area, size_t size){
@@ -82,27 +94,28 @@ void nus_thread_init(nus_thread_t *tp, const char *name, nus_prio_t prio, void (
 	tp->name = name;
 	tp->prio = prio;
 	tp->status = SUSPENDED;
+	tp->critical_nesting = 0;
 	tp->sp = (nus_context_t*) (area + size - sizeof (nus_context_t));
 	tp->sp->ra = (intptr_t) entry; 
-	tp->sp->status = nus_c0_get_status();
+	tp->sp->status = nus_c0_get_status() | 1;
 }
 
 nus_result_t nus_thread_wakeup(nus_thread_t *tp){
-	nus_interrupt_disable();
+	nus_critical_enter();
 
 	if(tp->status == SUSPENDED){
 		_nus_thread_ready(tp);
 
-		if(!IN_INTERRUPT()){
+		if(!IN_INTERRUPT() && nus_scheduler.started){
 			_nus_thread_reschedule();
 		}
 	}
 	else {
-		nus_interrupt_enable();
+		nus_critical_exit();
 		return NUS_ERR_THREAD_STATUS;
 	}
 
-	nus_interrupt_enable();
+	nus_critical_exit();
 
 	return NUS_OK;
 }
@@ -110,27 +123,29 @@ nus_result_t nus_thread_wakeup(nus_thread_t *tp){
 nus_result_t nus_thread_suspend(){
 	if(IN_INTERRUPT()) return NUS_ERR_CONTEXT; //nonsense in exception context
 
-	nus_interrupt_disable();
+	nus_critical_enter();
 
 	nus_scheduler.current->status = SUSPENDED;
-	_nus_thread_block();
 
-	nus_interrupt_enable();
+	if(nus_scheduler.started){
+		_nus_thread_block();
+	}
+
+	nus_critical_exit();
 
 	return NUS_OK;
 }
 
-
 nus_result_t nus_thread_yield(){
 	if(IN_INTERRUPT()) return NUS_ERR_CONTEXT; //nonsense in exception context
 
-	nus_interrupt_disable();
+	nus_critical_enter();
 
 	if(nus_scheduler.ready && nus_scheduler.ready->prio >= nus_scheduler.current->prio){
 		_nus_thread_switch();
 	}
 
-	nus_interrupt_enable();
+	nus_critical_exit();
 
 	return NUS_OK;
 }
@@ -142,13 +157,15 @@ nus_prio_t nus_thread_getprio(nus_thread_t *tp){
 nus_result_t nus_thread_setprio(nus_prio_t newprio){
 	if(IN_INTERRUPT()) return NUS_ERR_CONTEXT; //nonsense in exception context
 
-	nus_interrupt_disable();
+	nus_critical_enter();
 
 	nus_scheduler.current->prio = newprio;
 
-	_nus_thread_reschedule();
+	if(nus_scheduler.started){
+		_nus_thread_reschedule();
+	}
 
-	nus_interrupt_enable();
+	nus_critical_exit();
 
 	return NUS_OK;
 }
@@ -166,11 +183,11 @@ void nus_queue_init(nus_queue_t *mq, intptr_t *array, int size){
 }
 
 nus_result_t nus_queue_send(nus_queue_t *mq, intptr_t msg){
-	nus_interrupt_disable();
+	nus_critical_enter();
 
 	if(mq->count == mq->size){
 		if(IN_INTERRUPT()){
-			nus_interrupt_enable();
+			nus_critical_exit();
 			return NUS_ERR_CONTEXT;
 		}
 		else {
@@ -194,17 +211,17 @@ nus_result_t nus_queue_send(nus_queue_t *mq, intptr_t msg){
 		_nus_thread_reschedule();
 	}
 
-	nus_interrupt_enable();
+	nus_critical_exit();
 
 	return NUS_OK;
 }
 
 nus_result_t nus_queue_recv(nus_queue_t *mq, intptr_t *msg){
-	nus_interrupt_disable();
+	nus_critical_enter();
 
 	if(mq->count == 0){
 		if(IN_INTERRUPT()){
-			nus_interrupt_enable();
+			nus_critical_exit();
 			return NUS_ERR_CONTEXT;
 		}
 		else {
@@ -227,9 +244,29 @@ nus_result_t nus_queue_recv(nus_queue_t *mq, intptr_t *msg){
 		_nus_thread_reschedule();
 	}
 
-	nus_interrupt_enable();
+	nus_critical_exit();
 
 	return NUS_OK;
+}
+
+/* Critical section functions */
+
+void nus_critical_enter(){
+	__asm__ __volatile__(
+		"mfc0 $t0, $12;"
+		"srl $t0, $t0, 1;"
+		"sll $t0, $t0, 1;"
+		"mtc0 $t0, $12;" ::: "$t0");
+	nus_scheduler.current->critical_nesting++;
+}
+
+void nus_critical_exit(){
+	if(--nus_scheduler.current->critical_nesting == 0){
+		__asm__ __volatile__(
+			"mfc0 $t0, $12;"
+			"ori $t0, $t0, 1;"
+			"mtc0 $t0, $12;" ::: "$t0");
+	}
 }
 
 /* RCP interfaces */

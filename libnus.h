@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <regsinternal.h>
 
 typedef uint8_t nus_prio_t;
@@ -96,6 +97,7 @@ typedef struct nus_thread {
 	struct nus_thread *next;
 	const char *name;
 	nus_prio_t prio;
+	int8_t critical_nesting;
 	nus_status_t status;
 } nus_thread_t;
 
@@ -103,6 +105,7 @@ typedef struct {
 	nus_thread_t *current;
 	nus_thread_t *ready;
 	intptr_t irq_sp;
+	bool started;
 } nus_scheduler_t; 
 
 typedef struct {
@@ -116,6 +119,7 @@ typedef struct {
 } nus_queue_t;
 
 void nus_scheduler_init(void*, size_t);
+void nus_scheduler_start(void);
 
 void nus_thread_init(nus_thread_t*, const char*, nus_prio_t, void (*)(void), void*, size_t);
 
@@ -130,6 +134,8 @@ void nus_queue_init(nus_queue_t*, intptr_t*, int);
 nus_result_t nus_queue_send(nus_queue_t*, intptr_t);
 nus_result_t nus_queue_recv(nus_queue_t*, intptr_t*);
 
+void nus_critical_enter(void);
+void nus_critical_exit(void);
 
 #define MFC0(reg)                                                \
 	({                                                           \
@@ -152,39 +158,10 @@ static inline void nus_c0_set_status(int val) { MTC0($12, val); }
 
 /* COP0 functions */
 
-static inline void nus_interrupt_disable(void) {
-	uint32_t status;
-
-	__asm__ __volatile__(
-			"mfc0 %[status], $12\n\t"
-			"srl %[status], %[status], 1\n\t"
-			"sll %[status], %[status], 1\n\t"
-			"mtc0 %[status], $12\n\t"
-
-			: [status] "=r"(status)
-			);
-}
-
-//
-// Enables VR4300 interrupts.
-//
-static inline void nus_interrupt_enable(void) {
-	uint32_t status;
-
-	__asm__ __volatile__(
-			"mfc0 %[status], $12\n\t"
-			"ori %[status], %[status], 1\n\t"
-			"mtc0 %[status], $12\n\t"
-
-			: [status] "=r"(status)
-			);
-}
-
 static inline void nus_interrupt_set_mask(uint8_t mask) {
 	uint32_t status = (nus_c0_get_status() & (~0xff00)) | (mask << 8);
 	nus_c0_set_status(status);
 }
-
 
 /* RCP functions */
 
